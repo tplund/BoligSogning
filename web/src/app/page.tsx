@@ -1,6 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
+import dynamic from "next/dynamic";
+
+const MapView = dynamic(() => import("./MapView"), { ssr: false });
 
 interface RentalResult {
   caseID: string;
@@ -11,6 +14,7 @@ interface RentalResult {
   daysOnMarket: number;
   yearBuilt: number;
   energyLabel: string;
+  coordinates?: { lat: number; lon: number };
   address: {
     roadName: string;
     houseNumber: string;
@@ -46,7 +50,6 @@ function formatPrice(price: number): string {
 }
 
 export default function Home() {
-  // Search state
   const [municipalities, setMunicipalities] = useState<string[]>(["Aarhus"]);
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("7000");
@@ -55,12 +58,14 @@ export default function Home() {
   const [sortBy, setSortBy] = useState("price");
   const [sortAscending, setSortAscending] = useState(true);
 
-  // Results state
   const [results, setResults] = useState<RentalResult[]>([]);
   const [totalHits, setTotalHits] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [searched, setSearched] = useState(false);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+
+  const listRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const search = useCallback(async () => {
     setLoading(true);
@@ -86,7 +91,6 @@ export default function Home() {
         return;
       }
 
-      // Filter to only show results with the correct number of rooms
       const minR = minRooms ? parseInt(minRooms) : 0;
       const maxR = maxRooms ? parseInt(maxRooms) : 99;
       const filtered = (data.cases || []).filter(
@@ -109,18 +113,28 @@ export default function Home() {
     );
   };
 
+  const markersWithCoords = useMemo(
+    () => results.filter((r) => r.coordinates?.lat && r.coordinates?.lon),
+    [results]
+  );
+
+  const handleMarkerClick = (caseID: string) => {
+    setHighlightedId(caseID);
+    listRefs.current[caseID]?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  };
+
   return (
-    <main className="max-w-5xl mx-auto px-4 py-8">
+    <main className="max-w-7xl mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold text-gray-900 mb-2">
-        🏠 Boligsøgning
+        Boligsogning
       </h1>
-      <p className="text-gray-500 mb-8">
-        Find lejeboliger via Boligsiden.dk
-      </p>
+      <p className="text-gray-500 mb-8">Find lejeboliger via Boligsiden.dk</p>
 
       {/* Search Form */}
       <div className="bg-white rounded-xl shadow-sm border p-6 mb-8">
-        {/* Municipalities */}
         <div className="mb-5">
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Kommuner
@@ -142,7 +156,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Price & Rooms */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -196,7 +209,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Sort & Search */}
         <div className="flex flex-wrap items-end gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -221,8 +233,8 @@ export default function Home() {
               onChange={(e) => setSortAscending(e.target.value === "true")}
               className="border rounded-lg px-3 py-2 text-sm"
             >
-              <option value="true">Stigende ↑</option>
-              <option value="false">Faldende ↓</option>
+              <option value="true">Stigende</option>
+              <option value="false">Faldende</option>
             </select>
           </div>
           <button
@@ -230,66 +242,91 @@ export default function Home() {
             disabled={loading || municipalities.length === 0}
             className="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
           >
-            {loading ? "Søger..." : "Søg"}
+            {loading ? "Soger..." : "Sog"}
           </button>
         </div>
       </div>
 
-      {/* Error */}
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
           {error}
         </div>
       )}
 
-      {/* Results */}
-      {searched && !loading && (
-        <div className="mb-4 text-sm text-gray-500">
-          Viser {results.length} af {totalHits} resultater
-        </div>
-      )}
-
-      <div className="space-y-3">
-        {results.map((r) => (
-          <div
-            key={r.caseID}
-            className="bg-white rounded-xl shadow-sm border p-5 hover:shadow-md transition-shadow"
-          >
-            <div className="flex justify-between items-start">
-              <div>
-                <h3 className="font-semibold text-gray-900">
-                  {formatAddress(r)}
-                </h3>
-                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-sm text-gray-600">
-                  <span>{r.housingArea} m²</span>
-                  <span>{r.numberOfRooms} vær.</span>
-                  <span>{r.addressType}</span>
-                  {r.yearBuilt > 0 && <span>Bygget {r.yearBuilt}</span>}
-                  {r.energyLabel && r.energyLabel !== "-" && (
-                    <span>Energi: {r.energyLabel}</span>
-                  )}
-                  <span className="text-gray-400">
-                    {r.daysOnMarket} dage på markedet
-                  </span>
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-xl font-bold text-blue-600">
-                  {formatPrice(r.monthlyExpense)}
-                </div>
-                <a
-                  href={`https://www.boligsiden.dk/adresse/${r.caseID}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-blue-500 hover:underline mt-1 inline-block"
-                >
-                  Se på Boligsiden →
-                </a>
-              </div>
-            </div>
+      {/* Map + Results */}
+      {searched && !loading && results.length > 0 && (
+        <>
+          <div className="mb-4 text-sm text-gray-500">
+            Viser {results.length} af {totalHits} resultater
           </div>
-        ))}
-      </div>
+
+          {/* Map */}
+          {markersWithCoords.length > 0 && (
+            <div className="mb-6 rounded-xl overflow-hidden border shadow-sm" style={{ height: 400 }}>
+              <MapView
+                markers={markersWithCoords.map((r) => ({
+                  id: r.caseID,
+                  lat: r.coordinates!.lat,
+                  lng: r.coordinates!.lon,
+                  label: `${formatPrice(r.monthlyExpense)} - ${r.address.roadName} ${r.address.houseNumber}`,
+                }))}
+                highlightedId={highlightedId}
+                onMarkerClick={handleMarkerClick}
+              />
+            </div>
+          )}
+
+          {/* List */}
+          <div className="space-y-3">
+            {results.map((r) => (
+              <div
+                key={r.caseID}
+                ref={(el) => { listRefs.current[r.caseID] = el; }}
+                onClick={() => setHighlightedId(r.caseID)}
+                className={`bg-white rounded-xl shadow-sm border p-5 hover:shadow-md transition-all cursor-pointer ${
+                  highlightedId === r.caseID
+                    ? "ring-2 ring-blue-500 border-blue-300"
+                    : ""
+                }`}
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="font-semibold text-gray-900">
+                      {formatAddress(r)}
+                    </h3>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-sm text-gray-600">
+                      <span>{r.housingArea} m2</span>
+                      <span>{r.numberOfRooms} vaer.</span>
+                      <span>{r.addressType}</span>
+                      {r.yearBuilt > 0 && <span>Bygget {r.yearBuilt}</span>}
+                      {r.energyLabel && r.energyLabel !== "-" && (
+                        <span>Energi: {r.energyLabel}</span>
+                      )}
+                      <span className="text-gray-400">
+                        {r.daysOnMarket} dage
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xl font-bold text-blue-600">
+                      {formatPrice(r.monthlyExpense)}
+                    </div>
+                    <a
+                      href={`https://www.boligsiden.dk/adresse/${r.caseID}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-blue-500 hover:underline mt-1 inline-block"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      Se pa Boligsiden
+                    </a>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       {searched && !loading && results.length === 0 && !error && (
         <div className="text-center py-12 text-gray-400">

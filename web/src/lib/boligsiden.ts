@@ -9,6 +9,7 @@ export interface RentalCase {
   daysOnMarket: number;
   yearBuilt: number;
   energyLabel: string;
+  coordinates?: { lat: number; lon: number };
   address: {
     roadName: string;
     houseNumber: string;
