@@ -4,6 +4,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Boligsøgning",
   description: "Find din næste bolig i Danmark",
+  icons: {
+    icon: "/favicon.svg",
+  },
 };
 
 export default function RootLayout({
